@@ -1,7 +1,7 @@
 Decoding Oregon Scientific wireless sensor data with RTL-SDR and GNU Radio
 ===========================================================================
 
-Kevin Mehall  
+Kevin Mehall
 http://kevinmehall.net
 
 This script decodes the packets that Oregon Scientific remote
@@ -21,7 +21,7 @@ My sensors use the V1 protocol, but if you have newer sensors, take a look at
 [JeeLabs' description][jeelabs-v2] of the V2 protocol. It would probably be
 simple to adapt my code.
 
-[rtl-sdr]: http://sdr.osmocom.org/trac/wiki/rtl-sdr 
+[rtl-sdr]: http://sdr.osmocom.org/trac/wiki/rtl-sdr
 [ook]: http://en.wikipedia.org/wiki/On-off_keying
 [manchester]: http://en.wikipedia.org/wiki/Manchester_encoding
 [alyer]: http://alyer.frihost.net/thn128decoding.htm
@@ -32,13 +32,13 @@ The GNU Radio [osmosdr block] captures from the [device][p160].
 It's tuned slightly to the side to avoid the DC noise at the local oscillator
 frequency. A `freq_xlating_fir_filter_ccc` block selects and downsamples the
 correct region of the captured frequency range. Then it AM demodulates that band, and
-uses a message sink and queue to bring the samples into Python. (see gr_queue.py).
-A Python state machine detects the preamble, manchester-decodes the bits, and
-then parses the packet.
+uses a message sink and queue to bring the samples into Python.
+(see [gr\_queue.py][gr-queue]). A Python state machine detects the preamble,
+manchester-decodes the bits, and then parses the packet.
 
 [osmosdr block]: http://cgit.osmocom.org/cgit/gr-osmosdr/
 [p160]: http://blog.kevinmehall.com/post/21103573304/my-10-96-software-defined-radio-arrived
-
+[gr-queue]: https://github.com/kevinmehall/rtlsdr-433m-sensor/blob/master/gr_queue.py
 
 You can also (with the `-a` flag) play the AM audio to your speakers. The sensor
 packets sound like beeps, and you can hear other devices transmitting on the ISM

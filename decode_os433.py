@@ -24,16 +24,16 @@ freq_offs = 100e3
 level = -0.35
 
 class rtlsdr_am_stream(gr.top_block):
-	""" A GNU Radio top block that demodulates AM from RTLSDR and acts as a 
+	""" A GNU Radio top block that demodulates AM from RTLSDR and acts as a
 	python iterator for AM audio samples.
-	
+
 	Optionally plays the audio out the speaker.
 	"""
 
 	def __init__(self, center_freq, offset_freq, decimate_am=1, play_audio=False):
 		"""Configure the RTL-SDR and GNU Radio"""
 		super(rtlsdr_am_stream, self).__init__()
-		
+
 		audio_rate = 44100
 		device_rate = audio_rate * 25
 		output_rate = audio_rate / float(decimate_am)
@@ -57,21 +57,22 @@ class rtlsdr_am_stream(gr.top_block):
 			decimation=decimate_am,
 		)
 		self.sink = gr_queue.queue_sink_f()
-		
+
 		self.connect(self.osmosdr_source, self.freq_filter, self.am_demod)
 		self.connect(self.am_demod, self.resampler, self.sink)
-		
+
 		if play_audio:
-			self.audio_sink = audio.sink(audio_rate, "", True)
+			audio_device = 'pulse' if options.pulse else ''
+			self.audio_sink = audio.sink(audio_rate, audio_device, True)
 			self.connect(self.am_demod, self.audio_sink)
-			
+
 	def __iter__(self):
 		return self.sink.__iter__()
 
 def transition(data, level=-0.35):
 	"""Threshold a stream and yield transitions and their associated timing.
 	Used to detect the On-Off-Keying (OOK)"""
-	
+
 	last = False
 	last_i = 0
 	for i, val in enumerate(data):
@@ -84,7 +85,7 @@ def transition(data, level=-0.35):
 def decode_osv1(stream, level=-0.35):
 	"""Generator that takes an audio stream iterator and yields packets.
 	State machine detects the preamble, and then manchester-decodes the packet """
-	
+
 	state = 'wait'
 	count = 0
 	bit = False
@@ -92,14 +93,14 @@ def decode_osv1(stream, level=-0.35):
 
 	for direction, time, abstime in transition(stream, level):
 		# convert the time in samples to microseconds
-		time = time / float(stream.rate) * 1e6 
+		time = time / float(stream.rate) * 1e6
 
 		if state == 'wait' and direction is True:
 			# Start of the preamble
 			state = 'preamble'
 			count = 0
 			pkt = []
-			
+
 		elif state == 'preamble':
 			if direction is False:
 				if (900 < time < 2250):
@@ -131,13 +132,13 @@ def decode_osv1(stream, level=-0.35):
 					state = 'data'
 					bit = 1
 					pkt.append(1)
-				
+
 				elif (6000 < time < 7000):
 					# Long sync time starts a 0 (because a manchester-encoded 0 begins low)
 					state = 'data'
 					bit = 0
 					pkt.append(0)
-			
+
 				else:
 					print "invalid after sync", time
 					state = 'wait'
@@ -175,16 +176,16 @@ def decode_osv1(stream, level=-0.35):
 				yield Packet(bytes)
 				state = 'wait'
 
-class Packet(object):		
+class Packet(object):
 	def __init__(self, bytes):
 		""" Parse a binary packet into usable fields. """
 		self.bytes = bytes
-		
+
 		checksum = bytes[0] + bytes[1] + bytes[2]
 		self.valid = (checksum&0xff == bytes[3]) or (checksum&0xff + checksum>>8 == bytes[3])
-		
+
 		self.channel = 1 + (bytes[0] >> 6)
-		
+
 		t2 = bytes[1] >> 4
 		t3 = bytes[1] & 0x0f
 		t1 = bytes[2] & 0x0f
@@ -193,25 +194,27 @@ class Packet(object):
 		if sign: temp *= -1
 		self.temp_c = temp
 		self.temp_f = temp * 9.0/5.0 + 32
-		
+
 		self.batt = bool(bytes[2] & (1<<7))
 		self.hbit = bool(bytes[2] & (1<<6))
-		
+
 	def hex(self):
 		return ' '.join('%02X'%x for x in self.bytes)
-		
+
 if __name__ == '__main__':
 	import sys
 	import time
 	from optparse import OptionParser
-	
+
 	parser = OptionParser(usage='%prog [options]')
 	parser.add_option('-l', '--log', type='string', dest='log',
 		metavar='NAME', help='Log readings to <NAME><CHANNEL>.csv')
 	parser.add_option('-a', '--audio', action='store_true', dest='audio',
 		help="Play AM-demodulated signal to the speakers")
+	parser.add_option('-p', '--pulse', action='store_true', dest='pulse',
+		help="Use pulseaudio as soundserver")
 	(options, args) = parser.parse_args(sys.argv[1:])
-	
+
 	logfiles = {}
 	if options.log:
 		for channel in range(1, 3+1):
@@ -222,21 +225,21 @@ if __name__ == '__main__':
 	unit = 'F'
 	for packet in decode_osv1(stream):
 		flags = []
-		
+
 		if not packet.valid:
 			flags.append('[Invalid Checksum]')
-		
+
 		if packet.batt:
 			flags.append('[Battery Low]')
-			
+
 		if packet.hbit:
 			flags.append('[Sensor Failure]')
-			
+
 		if unit is 'F':
 			temp = packet.temp_f
 		else:
 			temp = packet.temp_c
-		
+
 		print "{hex} = Channel {channel}: {temp} {unit}  {flags}".format(
 			channel=packet.channel,
 			temp=temp,
@@ -244,9 +247,8 @@ if __name__ == '__main__':
 			flags = ' '.join(flags),
 			hex = packet.hex()
 		)
-		
+
 		logfile = logfiles.get(packet.channel, None)
 		if logfile:
 			logfile.write("{0},{1},{2}\n".format(time.asctime(),temp,packet.hex()))
 			logfile.flush()
-		
